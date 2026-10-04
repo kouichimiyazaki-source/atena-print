@@ -116,4 +116,4 @@ GitHub ActionsでPyInstallerを実行し、
 
 ## 作者
 
-Kouichi
+Kouichi.miyazaki
