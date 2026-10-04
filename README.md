@@ -112,11 +112,12 @@ GitHub ActionsでPyInstallerを実行し、
 
 ## ライセンス
 
-本ソフトウェアは、MIT Licenseのもとで公開しています。
+本ソフトウェアは、MIT Licenseの下で公開しています。
 
-詳細は LICENSE を参照してください。
+詳細は、リポジトリ内の [LICENSE](LICENSE) ファイルを参照してください。
 
-なお、本ソフトウェアが使用する外部ライブラリについては、それぞれのライセンス条件に従います。
+本ソフトウェアが利用する外部ライブラリについては、それぞれのライセンス条件に従います。
+詳細は [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照してください。
 
 ## 作者
 
