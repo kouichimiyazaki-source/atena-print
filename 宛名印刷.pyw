@@ -449,53 +449,6 @@ def split_postal_and_address(text):
     return postal, "\n".join(lines)
 
 
-def _open_xlsx_like(path):
-    ext = os.path.splitext(path)[1].lower()
-    wb = load_workbook(path, data_only=True, keep_vba=(ext == ".xlsm"))
-    ws = wb.worksheets[0]
-
-    def getter(ref):
-        return normalize_text(ws[ref].value)
-
-    return getter
-
-
-def _open_xls(path):
-    try:
-        import xlrd
-    except ImportError:
-        raise ImportError(
-            ".xlsファイルを読むには xlrd が必要です。"
-            "コマンドで `pip install xlrd` を実行してから、もう一度試してください。"
-        )
-    book = xlrd.open_workbook(path)
-    sheet = book.sheet_by_index(0)
-
-    def getter(ref):
-        row, col = coordinate_to_tuple(ref)
-        r, c = row - 1, col - 1
-        if r >= sheet.nrows or c >= sheet.ncols:
-            return ""
-        v = sheet.cell_value(r, c)
-        if v == "":
-            return ""
-        if isinstance(v, float) and v.is_integer():
-            v = int(v)
-        return normalize_text(v)
-
-    return getter
-
-
-def open_cell_getter(path):
-    ext = os.path.splitext(path)[1].lower()
-    if ext in (".xlsx", ".xlsm"):
-        return _open_xlsx_like(path)
-    elif ext == ".xls":
-        return _open_xls(path)
-    else:
-        raise ValueError(f"未対応のファイル形式です: {ext}")
-
-
 # ==================================================================
 # OZ-151〜156(受注業務連絡票)様式 対応
 # ------------------------------------------------------------------
@@ -521,7 +474,13 @@ def _iter_sheet_cellfuncs(path):
                 return normalize_text(v)
             yield ws.title, cellfunc
     elif ext == ".xls":
-        import xlrd
+        try:
+            import xlrd
+        except ImportError:
+            raise ImportError(
+                ".xlsファイルを読むには xlrd が必要です。"
+                "コマンドで `pip install xlrd` を実行してから、もう一度試してください。"
+            )
         book = xlrd.open_workbook(path)
         for sheet in book.sheets():
             def cellfunc(r, c, _sheet=sheet):
@@ -811,20 +770,56 @@ def extract_requester_legacy(get_cell):
     return result
 
 
+def _iter_sheet_getters(path):
+    """旧様式用: (シート名, getter(ref))を全シート分返す。refは"G39"のような
+    セル番地で、正規化済みの文字列を返す(空なら'')。"""
+    for sheet_name, cellfunc in _iter_sheet_cellfuncs(path):
+        def getter(ref, _f=cellfunc):
+            row, col = coordinate_to_tuple(ref)
+            return _f(row - 1, col - 1)
+        yield sheet_name, getter
+
+
+def extract_one_legacy_file(path):
+    """旧様式(A-ONE 72421様式)のブックから、全シートを対象に、記入のある
+    シートをそれぞれ1件のデータとして抽出する。
+    依頼先の氏名・住所と、報告書・請求書の判定セル(G39・G42)がすべて空の
+    シートは未記入とみなしてスキップする。記入済みシートが1枚も無い場合は
+    エラー行を1件返す。"""
+    records = []
+    base_name = os.path.basename(path)
+    for sheet_name, get_cell in _iter_sheet_getters(path):
+        label0 = extract_requester_legacy(get_cell)
+        label1 = extract_by_rule(get_cell, FLAG_CELL_1, CELL_RULES_1)
+        label2 = extract_by_rule(get_cell, FLAG_CELL_2, CELL_RULES_2)
+        if (not label0["氏名"] and not label0["住所"]
+                and not label1["_flag"] and not label2["_flag"]):
+            continue  # 完全に未記入のシートはスキップ
+        records.append({
+            "_source_file": f"{base_name} [{sheet_name}]",
+            "_path": path,
+            "label0": label0,
+            "label1": label1,
+            "label2": label2,
+        })
+
+    if not records:
+        empty_label = {"氏名": "", "住所": "", "_flag": "",
+                       "_error": "記入済みのシートが見つかりませんでした"}
+        records.append({
+            "_source_file": base_name,
+            "_path": path,
+            "label0": dict(empty_label),
+            "label1": dict(empty_label),
+            "label2": dict(empty_label),
+        })
+    return records
+
+
 def extract_one_file(path):
     if is_oz_workbook(path):
         return extract_one_oz_file(path)
-    get_cell = open_cell_getter(path)
-    label0 = extract_requester_legacy(get_cell)
-    label1 = extract_by_rule(get_cell, FLAG_CELL_1, CELL_RULES_1)
-    label2 = extract_by_rule(get_cell, FLAG_CELL_2, CELL_RULES_2)
-    return [{
-        "_source_file": os.path.basename(path),
-        "_path": path,
-        "label0": label0,
-        "label1": label1,
-        "label2": label2,
-    }]
+    return extract_one_legacy_file(path)
 
 
 def record_slot_keys(rec, mode):
