@@ -41,16 +41,16 @@ jobs:
 
       # ここから下は「v1.0.1」のようなタグを push したときだけ実行される。
       # Releases の添付ファイル名は、日本語だと文字が置き換わることがあるため、
-      # 英数字の名前(atena-print.exe)にコピーして添付する。
+      # 英数字の名前(atena-print-タグ名.exe。例: atena-print-v1.0.1.exe)にコピーして添付する。
       - name: Rename EXE for release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: cmd
         run: |
-          copy "dist\宛名印刷.exe" "dist\atena-print.exe"
+          copy "dist\宛名印刷.exe" "dist\atena-print-%GITHUB_REF_NAME%.exe"
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/atena-print.exe
+          files: dist/atena-print-${{ github.ref_name }}.exe
           generate_release_notes: true
