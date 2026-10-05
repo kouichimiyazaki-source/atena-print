@@ -5,10 +5,14 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write  # タグ push 時に Releases へ exe を添付するために必要
 
     steps:
       - name: Checkout
@@ -34,3 +38,19 @@ jobs:
         with:
           name: 宛名印刷-windows
           path: dist/宛名印刷.exe
+
+      # ここから下は「v1.0.1」のようなタグを push したときだけ実行される。
+      # Releases の添付ファイル名は、日本語だと文字が置き換わることがあるため、
+      # 英数字の名前(atena-print.exe)にコピーして添付する。
+      - name: Rename EXE for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: cmd
+        run: |
+          copy "dist\宛名印刷.exe" "dist\atena-print.exe"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/atena-print.exe
+          generate_release_notes: true
