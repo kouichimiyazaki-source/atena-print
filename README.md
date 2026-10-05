@@ -8,7 +8,7 @@ Excel形式の「受注業務連絡票」を読み込み、宛名情報を確認
 
 最新版は **[Releases](../../releases)** からダウンロードできます。
 
-Windowsで使用する場合は、Releaseに掲載されている実行ファイル(`atena-print.exe`)をダウンロードしてください。
+Windowsで使用する場合は、Releaseに掲載されている実行ファイル(`atena-print-v1.0.1.exe` のように、版番号つきの名前です)をダウンロードしてください。
 
 ※現在の公開版：v1.0.1
 
@@ -118,7 +118,7 @@ GitHub ActionsでPyInstallerを実行し、
 
 を生成します。
 
-`v1.0.1` のようなタグを push すると、ビルドしたEXEが `atena-print.exe` としてReleasesに自動で添付されます。
+`v1.0.1` のようなタグを push すると、ビルドしたEXEが `atena-print-v1.0.1.exe` のようにタグ名つきの名前でReleasesに自動で添付されます。
 
 ## ライセンス
 
