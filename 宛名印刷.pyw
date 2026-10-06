@@ -23,8 +23,12 @@
     「用紙設定...」ボタンから、面数・1片のサイズ・余白・フォントなどを
     図を見ながら変更できます。名前を付けて複数のプリセットとして
     保存しておき、後からいつでも呼び出せます。
-    設定・プリセットはすべて atena_seal_settings.json
-    (このファイルと同じフォルダ)に保存されます。
+    設定・プリセットはすべて atena_seal_settings.json に保存されます。
+    保存先はこのPCのユーザー領域(%APPDATA%\\宛名印刷\\)です。アプリを
+    同じPC内で移動しても、設定はそのまま使われます。
+    (旧版でアプリと同じフォルダに保存していた設定は、初回起動時に自動で
+    引き継がれます。%APPDATA%が使えない環境では、従来どおりアプリと
+    同じフォルダに保存します。)
 
 ■ 必要なライブラリ(初回のみ)
     pip install openpyxl python-docx tkinterdnd2
@@ -40,6 +44,7 @@ import re
 import threading
 import subprocess
 import platform
+import shutil
 
 import tkinter as tk
 import tkinter.font as tkfont
@@ -170,7 +175,7 @@ USAGE_TEXT = """\
    (既定値・長形3号・角形2号は、削除しても次回起動時に元に戻ります)
  ・プリセットには、文字の設定(配置・インデント含む)と寸法が保存されます。
    「枠」の数の選択と、1枚目のスキップ指定は含まれません。
- ・プリセットは atena_seal_settings.json に保存されます。
+ ・プリセットは atena_seal_settings.json に保存されます(保存先は「用紙設定について」を参照)。
 
 ■ 受注業務連絡票(OZ-151〜156)の読み取りルール
  ・1つのファイルの中で記入のあるシートは、シートごとに別データになります。
@@ -187,8 +192,19 @@ USAGE_TEXT = """\
  ・電話番号(TEL以降)は住所に含まれません。
 
 ■ 用紙設定について
- ・設定・プリセットは atena_seal_settings.json に保存されます
-   (このアプリと同じフォルダ)。
+ ・設定・プリセットは atena_seal_settings.json に保存されます。
+   保存先は、このPCのユーザー領域の「宛名印刷」フォルダです。
+   (通常は C:\\Users\\<ユーザー名>\\AppData\\Roaming\\宛名印刷\\)
+ ・アプリ(.pyw / exe)を同じPC内で別の場所へ移動しても、設定・プリセットは
+   そのまま使われます。PCごと・Windowsのユーザーごとに別々に保存されます。
+ ・旧版で、アプリと同じフォルダに atena_seal_settings.json がある場合は、
+   初回の起動時に自動でコピーして引き継ぎます(元のファイルはそのまま残ります)。
+ ・別のPCへ設定を移したいときは、上記フォルダの atena_seal_settings.json を
+   コピーしてください。
+ ・「入力受注業務連絡票」フォルダ、help_images、icon.ico は、
+   従来どおりアプリと同じ場所を基準にします(アプリを移動するときは、
+   「入力受注業務連絡票」フォルダも一緒に移動してください)。
+ ・%APPDATA% が使えない環境では、従来どおりアプリと同じフォルダに保存します。
 """
 # ------------------------------------------------------------------
 # 判定セルと、■/□それぞれの場合に読み取るセル位置(ラベル1・ラベル2)
@@ -265,14 +281,13 @@ DEFAULT_SLOT_MODE = 2
 
 SUPPORTED_EXTS = [".xlsx", ".xlsm", ".xls"]
 SETTINGS_FILENAME = "atena_seal_settings.json"
+SETTINGS_DIRNAME = "宛名印刷"  # %APPDATA% の下に作る設定用フォルダ名
 ICON_FILENAME = "icon.ico"
 
 
 def _script_dir():
-    """設定ファイル(atena_seal_settings.json)を置く場所。
-    .pywのまま実行している場合はスクリプトと同じフォルダ、
-    PyInstallerでexe化している場合は.exe本体と同じフォルダになる
-    (どちらの場合も、次回起動時に同じ設定を読み込めるようにするため)。
+    """アプリ本体(.pyw / exe)のあるフォルダ。旧版の設定ファイルの場所であり、
+    現在は %APPDATA% が使えない場合の設定ファイルの置き場所でもある。
     上で計算済みのBASE_DIRと同じ考え方なので、それをそのまま使う。"""
     return BASE_DIR
 
@@ -286,8 +301,37 @@ def _resource_dir():
     return _script_dir()
 
 
-def get_settings_path():
+def get_legacy_settings_path():
+    """旧版(v1.0.1以前)の設定ファイルの場所(アプリと同じフォルダ)。"""
     return os.path.join(_script_dir(), SETTINGS_FILENAME)
+
+
+def get_settings_path():
+    """設定ファイル(atena_seal_settings.json)の場所。
+    %APPDATA%\\宛名印刷\\ に保存するので、アプリ本体を同じPC内で移動しても
+    設定はそのまま使われる。%APPDATA% が使えない環境では、従来どおりアプリと
+    同じフォルダを使う。"""
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return os.path.join(appdata, SETTINGS_DIRNAME, SETTINGS_FILENAME)
+    return get_legacy_settings_path()
+
+
+def migrate_legacy_settings():
+    """新しい保存先に設定ファイルがまだ無く、旧版の設定ファイル(アプリと同じ
+    フォルダ)がある場合は、新しい保存先へコピーして引き継ぐ。元のファイルは
+    消さない。失敗しても起動の妨げにならないよう、例外は握りつぶす。"""
+    try:
+        new_path = get_settings_path()
+        old_path = get_legacy_settings_path()
+        if os.path.abspath(new_path) == os.path.abspath(old_path):
+            return
+        if os.path.exists(new_path) or not os.path.isfile(old_path):
+            return
+        os.makedirs(os.path.dirname(new_path), exist_ok=True)
+        shutil.copy2(old_path, new_path)
+    except Exception:
+        pass
 
 
 def get_icon_path():
@@ -349,6 +393,7 @@ BUILTIN_PRESET_ORDER = {
 
 def load_store():
     """設定ファイルから { current: {...}, presets: {名前: {...}, ...} } を読み込む"""
+    migrate_legacy_settings()
     path = get_settings_path()
     store = {"current": dict(DEFAULT_SETTINGS), "presets": {}, "slot_mode": DEFAULT_SLOT_MODE}
     if os.path.exists(path):
@@ -384,6 +429,7 @@ def load_store():
 
 def save_store(store):
     path = get_settings_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(store, f, ensure_ascii=False, indent=2)
 
