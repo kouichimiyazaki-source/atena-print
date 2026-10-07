@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+<defs>
+<linearGradient id="shine" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="1280" height="640" fill="#FFD83D"/>
+<rect width="1280" height="640" fill="url(#shine)"/>
+<rect x="64" y="72" width="1152" height="520" rx="48" fill="#000" opacity="0.12"/>
+<rect x="64" y="56" width="1152" height="520" rx="48" fill="#FFFFFF"/>
+<circle cx="340" cy="316" r="200" fill="#FFF1B3"/>
+<g transform="translate(140 116) scale(4)" fill="none" stroke="#0F8CC9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<rect x="28" y="9" width="44" height="48" rx="3" fill="#fff"/>
+<path d="M36 18H64M37 26H63M50 26V41" stroke="#E60012" stroke-width="4" stroke-linecap="butt"/>
+<rect x="14" y="43" width="72" height="31" rx="10" fill="#fff"/>
+<path d="M22 50Q22 47 26 47H44" stroke-width="2.4" opacity="0.6"/>
+<path d="M24 62H76"/>
+<circle cx="73" cy="54" r="3.6" fill="#FFD83D"/>
+<rect x="29" y="63" width="42" height="21" rx="3" fill="#fff"/>
+<path d="M36 71H64M36 77.5H54"/>
+</g>
+<g font-family="Noto Sans CJK JP, Noto Sans CJK TC, sans-serif">
+<text x="600" y="272" font-size="84" font-weight="700" fill="#12324A">宛名シール作成</text>
+<rect x="604" y="304" width="150" height="10" rx="5" fill="#FFD83D"/>
+<rect x="766" y="304" width="60" height="10" rx="5" fill="#1EB8F2"/>
+<rect x="838" y="304" width="30" height="10" rx="5" fill="#E60012"/>
+<text x="602" y="382" font-size="36" font-weight="500" fill="#3C5A70">住所データから宛名シール用の</text>
+<text x="602" y="436" font-size="36" font-weight="500" fill="#3C5A70">ラベルをかんたんに作成するツール</text>
+</g>
+</svg>
