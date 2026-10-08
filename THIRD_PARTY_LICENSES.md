@@ -19,6 +19,11 @@
 - License: MIT License
 - Project: https://python-docx.readthedocs.io/
 
+## reportlab
+
+- License: BSD License
+- Project: https://www.reportlab.com/opensource/
+
 ## tkinterdnd2
 
 - License: MIT License

@@ -26,12 +26,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller openpyxl xlrd python-docx tkinterdnd2 pillow
+          python -m pip install pyinstaller openpyxl xlrd python-docx reportlab tkinterdnd2 pillow
 
       - name: Build EXE
         shell: cmd
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name "宛名印刷" --icon "icon.ico" --add-data "icon.ico;." --collect-all tkinterdnd2 --hidden-import xlrd --hidden-import openpyxl "宛名印刷.pyw"
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name "宛名印刷" --icon "icon.ico" --add-data "icon.ico;." --collect-all tkinterdnd2 --hidden-import xlrd --hidden-import openpyxl --hidden-import reportlab.pdfbase.cidfonts --hidden-import reportlab.pdfbase.ttfonts "宛名印刷.pyw"
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4

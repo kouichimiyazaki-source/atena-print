@@ -8,7 +8,8 @@
 ドラッグ&ドロップして追加することもできます。
 
 左側の一覧で氏名・住所の抽出結果を確認・その場で修正してから、
-下の緑色のボタンでWordファイルを作成します。
+下の緑色のボタンで宛名のファイル(WordまたはPDF)を作成します。
+出力様式(Word / PDF)は「用紙設定...」の一番上で切り替えられます。
 
 ■ 「使い方」の画像
     説明画像は、このファイルの中に埋め込まれています。差し替えたいときは、
@@ -31,7 +32,8 @@
     同じフォルダに保存します。)
 
 ■ 必要なライブラリ(初回のみ)
-    pip install openpyxl python-docx tkinterdnd2
+    pip install openpyxl python-docx reportlab tkinterdnd2
+    (python-docx は Word出力、reportlab は PDF出力に使います。使う方だけでも動きます)
     (tkinterdnd2が無い場合でも動きますが、ドラッグ&ドロップは使えません)
     (.xls形式も使う場合は xlrd も追加: pip install xlrd)
 """
@@ -79,11 +81,20 @@ DEFAULT_INPUT_DIR = os.path.join(
     "入力受注業務連絡票"
 )
 
-# 現在のフォルダ内に「宛名印刷.docx」を出力
-DEFAULT_OUTPUT_FILE = os.path.join(
-    BASE_DIR,
-    "宛名印刷.docx"
-)
+# 出力様式(アプリ共通の設定。用紙設定のプリセットには含めない)
+OUTPUT_FORMAT_LABELS = {"docx": "Word(.docx)", "pdf": "PDF(.pdf)"}
+OUTPUT_FORMAT_LABELS_REV = {v: k for k, v in OUTPUT_FORMAT_LABELS.items()}
+OUTPUT_FORMAT_EXT = {"docx": ".docx", "pdf": ".pdf"}
+DEFAULT_OUTPUT_FORMAT = "docx"
+DEFAULT_OUTPUT_BASENAME = "宛名印刷"
+
+
+def default_output_path(fmt):
+    """現在のフォルダ内に「宛名印刷.docx」または「宛名印刷.pdf」を出力する"""
+    return os.path.join(BASE_DIR, DEFAULT_OUTPUT_BASENAME + OUTPUT_FORMAT_EXT.get(fmt, ".docx"))
+
+
+DEFAULT_OUTPUT_FILE = default_output_path(DEFAULT_OUTPUT_FORMAT)
 
 # 「使い方」ボタンで表示するテキスト
 USAGE_TEXT = """\
@@ -112,7 +123,8 @@ USAGE_TEXT = """\
 
 ③印刷
 　　・出力ファイルの保存先を設定し緑色の「宛名印刷」ボタンを押す
-　　　と、Wordファイルが作成されて自動で開きます。
+　　　と、ファイル(WordまたはPDF。用紙設定の「出力様式」で選べます)が
+　　　作成されて自動で開きます。
 
 ■ ボタンの説明
  ・規定フォルダ作成 … 「入力受注業務連絡票」フォルダをアプリと同じ場所に作成
@@ -136,6 +148,21 @@ USAGE_TEXT = """\
    - 3つ(すべて) … 依頼先 → 報告書 → 請求書 の順に3つ
 
 
+■ 出力様式(Word / PDF)
+ ・「用紙設定...」の一番上の「出力様式」で、出力するファイルの形式を選びます。
+   - Word(.docx) … 従来どおり。WordやLibreOfficeなど、.docxを開けるアプリが必要です。
+   - PDF(.pdf)   … Word等のOfficeが入っていないPCでも、PDFビューア(Edge・
+                    Adobe Readerなど)があれば開いて印刷できます。
+ ・出力様式はこのPC共通の設定で、プリセットには含まれません。
+   切り替えると、出力ファイル欄の拡張子(.docx / .pdf)も自動で変わります。
+ ・PDFを印刷するときは、印刷画面で「拡大/縮小なし(実際のサイズ)」を選んでください。
+   「用紙に合わせる」などにすると、シールの位置がずれます。
+ ・PDFの文字は、設定のフォント名と同じフォントをこのPCから探して埋め込みます。
+   見つからない場合は、代替のフォントで出力し、ログ欄にお知らせを出します。
+ ・PDFは、開くアプリによる配置の崩れが出にくい反面、Word出力とまったく同じ位置には
+   ならないことがあります。初めて使うときは、普通紙に試し刷りして位置を確認し、
+   ずれていれば用紙設定の「上余白」などで調整してください。
+
 ■ 氏名・住所の配置とインデント(用紙設定)
  ・「用紙設定...」の中で、「住所」と「氏名」それぞれについて、
    配置(左寄せ / 中央 / 右寄せ)とインデント(pt)を指定できます。
@@ -148,7 +175,8 @@ USAGE_TEXT = """\
  ・プリセットに保存すると、配置とインデントも一緒に保存されます。
 
 ■ 用紙設定の画面の見方
- ・上の「レイアウト種別」で「宛名シール」か「封筒」を選びます。
+ ・一番上の「出力様式」で、Word(.docx)かPDF(.pdf)を選びます。
+ ・その下の「レイアウト種別」で「宛名シール」か「封筒」を選びます。
  ・宛名シールの場合:「文字の設定」→「シール設定」の順に並んでいます。
    - 文字の設定 … フォント(一覧から選択)、文字サイズ、住所・氏名の配置とインデント
    - シール設定 … 面数、1片の幅・高さ、上余白、下余白の安全マージン
@@ -395,11 +423,14 @@ def load_store():
     """設定ファイルから { current: {...}, presets: {名前: {...}, ...} } を読み込む"""
     migrate_legacy_settings()
     path = get_settings_path()
-    store = {"current": dict(DEFAULT_SETTINGS), "presets": {}, "slot_mode": DEFAULT_SLOT_MODE}
+    store = {"current": dict(DEFAULT_SETTINGS), "presets": {}, "slot_mode": DEFAULT_SLOT_MODE,
+             "output_format": DEFAULT_OUTPUT_FORMAT}
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            if isinstance(data, dict) and data.get("output_format") in OUTPUT_FORMAT_EXT:
+                store["output_format"] = data["output_format"]
             if isinstance(data, dict) and "current" in data:
                 for k in DEFAULT_SETTINGS:
                     if k in data["current"]:
@@ -910,6 +941,34 @@ def apply_paragraph_alignment(paragraph, align, indent_pt, Pt, WD_ALIGN_PARAGRAP
             pf.left_indent = Pt(indent)
 
 
+def compute_label_slots(records, per_page, skip_slots=None, slot_mode=DEFAULT_SLOT_MODE):
+    """宛名シール: 印刷順に並べた枠のリストを返す(Word出力・PDF出力で共通)。
+    各要素は (氏名, 住所)、または空欄にする枠なら None。"""
+    skip_slots = skip_slots or set()
+
+    data_slots = []
+    for _rec, _key, label in iter_active_labels(records, slot_mode):
+        if label.get("_error"):
+            data_slots.append(None)
+        else:
+            data_slots.append((label["氏名"], label["住所"]))
+
+    # 1枚目だけ、指定された枠(0始まりの通し番号)を空欄にして
+    # その分だけデータの開始位置をずらす(既に使用済みのシールを飛ばして印刷するため)
+    data_iter = iter(data_slots)
+    slots = []
+    for pos in range(per_page):
+        if pos in skip_slots:
+            slots.append(None)
+        else:
+            try:
+                slots.append(next(data_iter))
+            except StopIteration:
+                break
+    slots.extend(data_iter)
+    return slots
+
+
 def build_label_document(records, out_path, settings, skip_slots=None, slot_mode=DEFAULT_SLOT_MODE):
     try:
         from docx import Document
@@ -948,28 +1007,7 @@ def build_label_document(records, out_path, settings, skip_slots=None, slot_mode
         rFonts.set(qn('w:eastAsia'), font_name)
 
     per_page = cols * rows
-    skip_slots = skip_slots or set()
-
-    data_slots = []
-    for _rec, _key, label in iter_active_labels(records, slot_mode):
-        if label.get("_error"):
-            data_slots.append(None)
-        else:
-            data_slots.append((label["氏名"], label["住所"]))
-
-    # 1枚目だけ、指定された枠(0始まりの通し番号)を空欄にして
-    # その分だけデータの開始位置をずらす(既に使用済みのシールを飛ばして印刷するため)
-    data_iter = iter(data_slots)
-    slots = []
-    for pos in range(per_page):
-        if pos in skip_slots:
-            slots.append(None)
-        else:
-            try:
-                slots.append(next(data_iter))
-            except StopIteration:
-                break
-    slots.extend(data_iter)
+    slots = compute_label_slots(records, per_page, skip_slots, slot_mode)
 
     doc = Document()
 
@@ -1037,6 +1075,54 @@ def build_label_document(records, out_path, settings, skip_slots=None, slot_mode
     doc.save(out_path)
 
 
+def envelope_geometry(settings):
+    """封筒モードの寸法の計算(Word出力・PDF出力で共通)。
+    封筒サイズ、印刷可能な幅、住所氏名の印字枠の幅・高さ、上辺から印字枠までの長さなどを返す。"""
+    page_w = settings["envelope_width_mm"]
+    page_h = settings["envelope_height_mm"]
+    margin_left_mm = settings.get("envelope_margin_left_mm", 8.0)
+    margin_right_mm = settings.get("envelope_margin_right_mm", 5.0)
+    font_name = settings["envelope_font_name"]
+    font_size = settings["envelope_font_size_pt"]
+
+    # 実際に印字できる幅(左右マージンを引いた内側の領域)。
+    usable_width_mm = max(10.0, page_w - margin_left_mm - margin_right_mm)
+
+    # 住所氏名の印字枠の幅・高さ(設定で編集可能。既定値はプリセットごとの目安)
+    content_width_mm = min(usable_width_mm, settings.get("envelope_content_width_mm", usable_width_mm / 2))
+    content_width_mm = max(10.0, content_width_mm)
+
+    # 住所・氏名を印字できる高さ
+    # (プリンターの印刷可能範囲(用紙端付近は印字不可)を考慮し、下端の
+    # 安全マージンを8mm確保して別ページに溢れるのを防ぐ)
+    BOTTOM_SAFETY_MM = 8.0
+    remaining_mm = max(10.0, page_h - BOTTOM_SAFETY_MM)
+
+    content_height_mm = min(remaining_mm, settings.get("envelope_content_height_mm", remaining_mm * 0.45))
+    content_height_mm = max(10.0, content_height_mm)
+
+    # 封筒の上辺から印字枠までの長さ(未設定の古い設定は従来の自動配分と同じ位置)
+    top_offset_mm = settings.get("envelope_content_top_mm")
+    if top_offset_mm is None:
+        top_offset_mm = legacy_envelope_top_mm(settings)
+    # 印字枠が用紙(下端の安全マージンを除く)からはみ出さないように収める
+    top_offset_mm = max(0.0, min(float(top_offset_mm), remaining_mm - content_height_mm))
+
+    return {
+        "page_w": page_w,
+        "page_h": page_h,
+        "margin_left_mm": margin_left_mm,
+        "margin_right_mm": margin_right_mm,
+        "font_name": font_name,
+        "font_size": font_size,
+        "usable_width_mm": usable_width_mm,
+        "content_width_mm": content_width_mm,
+        "content_height_mm": content_height_mm,
+        "top_offset_mm": top_offset_mm,
+        "line_height_pt": font_size * ENVELOPE_LINE_HEIGHT_RATIO,
+    }
+
+
 def build_envelope_document(records, out_path, settings, slot_mode=DEFAULT_SLOT_MODE):
     """封筒モード: データ1件につき用紙(封筒サイズ)1枚を出力し、
     封筒の中央に配置した印字枠(幅・高さは設定で編集可能)の中に、
@@ -1055,20 +1141,18 @@ def build_envelope_document(records, out_path, settings, slot_mode=DEFAULT_SLOT_
             "コマンドで `pip install python-docx` を実行してから、もう一度試してください。"
         )
 
-    env_width_mm = settings["envelope_width_mm"]
-    page_w = env_width_mm
-    page_h = settings["envelope_height_mm"]
-    margin_left_mm = settings.get("envelope_margin_left_mm", 8.0)
-    margin_right_mm = settings.get("envelope_margin_right_mm", 5.0)
-    font_name = settings["envelope_font_name"]
-    font_size = settings["envelope_font_size_pt"]
-
-    # 実際に印字できる幅(左右マージンを引いた内側の領域)。
-    usable_width_mm = max(10.0, page_w - margin_left_mm - margin_right_mm)
-
-    # 住所氏名の印字枠の幅・高さ(設定で編集可能。既定値はプリセットごとの目安)
-    content_width_mm = min(usable_width_mm, settings.get("envelope_content_width_mm", usable_width_mm / 2))
-    content_width_mm = max(10.0, content_width_mm)
+    geo = envelope_geometry(settings)
+    page_w = geo["page_w"]
+    page_h = geo["page_h"]
+    margin_left_mm = geo["margin_left_mm"]
+    margin_right_mm = geo["margin_right_mm"]
+    font_name = geo["font_name"]
+    font_size = geo["font_size"]
+    usable_width_mm = geo["usable_width_mm"]
+    content_width_mm = geo["content_width_mm"]
+    content_height_mm = geo["content_height_mm"]
+    top_offset_mm = geo["top_offset_mm"]
+    line_height_pt = geo["line_height_pt"]
 
     def set_font(run, size_pt):
         run.font.size = Pt(size_pt)
@@ -1079,24 +1163,6 @@ def build_envelope_document(records, out_path, settings, slot_mode=DEFAULT_SLOT_
             rFonts = rPr.makeelement(qn('w:rFonts'), {})
             rPr.append(rFonts)
         rFonts.set(qn('w:eastAsia'), font_name)
-
-    # 住所・氏名を印字できる高さ
-    # (プリンターの印刷可能範囲(用紙端付近は印字不可)を考慮し、下端の
-    # 安全マージンを8mm確保して別ページに溢れるのを防ぐ)
-    BOTTOM_SAFETY_MM = 8.0
-    remaining_mm = max(10.0, page_h - BOTTOM_SAFETY_MM)
-
-    content_height_mm = min(remaining_mm, settings.get("envelope_content_height_mm", remaining_mm * 0.45))
-    content_height_mm = max(10.0, content_height_mm)
-
-    # 封筒の上辺から印字枠までの長さ(未設定の古い設定は従来の自動配分と同じ位置)
-    top_offset_mm = settings.get("envelope_content_top_mm")
-    if top_offset_mm is None:
-        top_offset_mm = legacy_envelope_top_mm(settings)
-    # 印字枠が用紙(下端の安全マージンを除く)からはみ出さないように収める
-    top_offset_mm = max(0.0, min(float(top_offset_mm), remaining_mm - content_height_mm))
-
-    line_height_pt = font_size * ENVELOPE_LINE_HEIGHT_RATIO
 
     def zero_cell_margins(table):
         """セルの既定の上下余白をゼロにし、行の高さ合計が封筒サイズをはみ出して
@@ -1198,6 +1264,441 @@ def build_envelope_document(records, out_path, settings, slot_mode=DEFAULT_SLOT_
 
     doc.save(out_path)
     return {"total": len(entries), "printed": printed, "no_postal": no_postal}
+
+
+# ==================================================================
+# PDF出力(reportlabで直接描画する)
+# ------------------------------------------------------------------
+# Word等のOffice製品が入っていないPCでも、PDFビューア(Edge・Adobe Reader等)
+# があれば表示・印刷できる。Word出力と同じ設定値(面数・1片のサイズ・余白・
+# 印字枠・フォント・配置・インデント)から、同じ位置に文字を描く。
+# ※PDFを印刷するときは、必ず「拡大/縮小なし(実際のサイズ)」で印刷すること。
+# ==================================================================
+# ---- Word出力(python-docxの既定の文書)の動きに合わせるための値 ----
+PDF_LABEL_CELL_PAD_MM = 1.9       # 宛名シールの1片の左右の内側余白(Wordの表の既定値)
+PDF_ENVELOPE_CELL_PAD_MM = 0.35   # 封筒の印字枠の左右の内側余白(Word出力の表と同じ)
+PDF_LABEL_LINE_MULT = 1.15        # 宛名シールの行間(文書の既定=1.15倍。フォントの「1行」の高さに掛ける)
+PDF_LABEL_PARA_AFTER_PT = 10.0    # 宛名シールの段落の後ろの空き(文書の既定=10pt)
+PDF_LABEL_EST_LINE_RATIO = 1.2    # Word出力が「上の空き」を計算するときの行の高さの見積もり(1.2倍)
+PDF_EXACT_BASELINE_RATIO = 0.8    # 行の高さを固定した行(封筒)で、行の上端からベースラインまでの割合
+
+# Windowsに標準で入っている日本語フォント名 → (ファイル名, TTCファイル内の何番目か) の候補
+_WINDOWS_FONT_FILES = {
+    "游ゴシック": [("YuGothR.ttc", 0), ("YuGothM.ttc", 0)],
+    "游明朝": [("yumin.ttf", 0)],
+    "メイリオ": [("meiryo.ttc", 0)],
+    "MS ゴシック": [("msgothic.ttc", 0)],
+    "MS Pゴシック": [("msgothic.ttc", 2)],
+    "MS 明朝": [("msmincho.ttc", 0)],
+    "MS P明朝": [("msmincho.ttc", 1)],
+    "BIZ UDゴシック": [("BIZ-UDGothicR.ttc", 0)],
+    "BIZ UDPゴシック": [("BIZ-UDGothicR.ttc", 1)],
+    "BIZ UD明朝": [("BIZ-UDMinchoM.ttc", 0)],
+    "BIZ UDP明朝": [("BIZ-UDMinchoM.ttc", 1)],
+    "HG丸ｺﾞｼｯｸM-PRO": [("HGRSMP.TTF", 0)],
+    "UD デジタル 教科書体 N-R": [("UDDigiKyokashoN-R.ttc", 0)],
+}
+
+_PDF_FONT_CACHE = {}
+_PDF_FONT_METRICS = {}  # reportlab上のフォント名 → (ascent, descent, 1行の高さ)  すべて文字サイズに対する倍率
+
+
+def _read_font_metrics(path, idx):
+    """TrueType/TTCファイルから (ascent, descent, 1行の高さ) を、文字サイズに対する倍率で返す。
+    1行の高さは、Wordが「1行」の行間にする高さ(winAscent+winDescent+外部レディング)。
+    游ゴシック・メイリオなど、行間が広いフォントでもWordに近い行の位置になる。
+    読み取れなければ None。"""
+    import struct
+    try:
+        with open(path, "rb") as f:
+            head = f.read(12)
+            base = 0
+            if head[:4] == b"ttcf":  # TTC(複数フォントの集まり)
+                num = struct.unpack(">I", head[8:12])[0]
+                if idx >= num:
+                    return None
+                f.seek(12 + 4 * idx)
+                base = struct.unpack(">I", f.read(4))[0]
+                f.seek(base)
+                head = f.read(12)
+            num_tables = struct.unpack(">H", head[4:6])[0]
+            tables = {}
+            f.seek(base + 12)
+            for _ in range(num_tables):
+                rec = f.read(16)
+                off, _ln = struct.unpack(">II", rec[8:16])
+                tables[rec[:4]] = off
+
+            def read_table(tag, n):
+                f.seek(tables[tag])
+                return f.read(n)
+
+            upem = struct.unpack(">H", read_table(b"head", 20)[18:20])[0]
+            h_asc, h_desc, h_gap = struct.unpack(">hhh", read_table(b"hhea", 10)[4:10])
+            if b"OS/2" in tables:
+                win_a, win_d = struct.unpack(">HH", read_table(b"OS/2", 78)[74:78])
+            else:
+                win_a, win_d = h_asc, -h_desc
+            if upem <= 0 or win_a + win_d <= 0:
+                return None
+            leading = max(0, h_gap - ((win_a + win_d) - (h_asc - h_desc)))
+            return win_a / upem, win_d / upem, (win_a + win_d + leading) / upem
+    except Exception:
+        return None
+
+
+def pdf_font_metrics(font):
+    """register_pdf_font() が返したフォント名の (ascent, descent, 1行の高さ) を返す(文字サイズに対する倍率)。"""
+    m = _PDF_FONT_METRICS.get(font)
+    if m:
+        return m
+    from reportlab.pdfbase import pdfmetrics
+    asc, desc = pdfmetrics.getAscentDescent(font, 1000)
+    m = (asc / 1000.0, -desc / 1000.0, (asc - desc) / 1000.0)
+    _PDF_FONT_METRICS[font] = m
+    return m
+
+
+def _font_search_dirs():
+    """フォントファイルを探すフォルダ。Windows標準、ユーザーが後から入れた分、
+    アプリと同じ場所の fonts フォルダ(任意)の順。"""
+    dirs = []
+    windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot")
+    if windir:
+        dirs.append(os.path.join(windir, "Fonts"))
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        dirs.append(os.path.join(local, "Microsoft", "Windows", "Fonts"))
+    dirs.append(os.path.join(BASE_DIR, "fonts"))
+    extra = os.environ.get("ATENA_PRINT_FONT_DIR")  # 動作確認用(Windows以外でも探せるようにする)
+    if extra:
+        dirs.append(extra)
+    return dirs
+
+
+def _registry_fonts():
+    """Windowsにインストール済みのフォントの (表示名, ファイルパス) 一覧(レジストリから取得)。
+    Windows以外、または読み取れない場合は空のリスト。"""
+    result = []
+    try:
+        import winreg
+    except ImportError:
+        return result
+    windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows"
+    sources = [
+        (winreg.HKEY_LOCAL_MACHINE, os.path.join(windir, "Fonts")),
+        (winreg.HKEY_CURRENT_USER,
+         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Fonts")),
+    ]
+    for hive, base in sources:
+        try:
+            with winreg.OpenKey(hive, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts") as key:
+                i = 0
+                while True:
+                    try:
+                        disp, val, _t = winreg.EnumValue(key, i)
+                    except OSError:
+                        break
+                    i += 1
+                    if isinstance(val, str):
+                        result.append((disp, val if os.path.isabs(val) else os.path.join(base, val)))
+        except OSError:
+            continue
+    return result
+
+
+def _find_font_file(font_name):
+    """フォント名から (ファイルのパス, TTCファイル内の番号) を探す。見つからなければ None。
+    ① Windows標準の日本語フォント名の対応表 → ② レジストリの表示名(英語名や、
+    後から入れたフォント) → ③ フォルダ内の「フォント名.ttf/.ttc」の順に探す。"""
+    dirs = _font_search_dirs()
+    for fname, idx in _WINDOWS_FONT_FILES.get(font_name, []):
+        for d in dirs:
+            p = os.path.join(d, fname)
+            if os.path.isfile(p):
+                return p, idx
+
+    key = font_name.strip().lower()
+    best = None  # (優先度, パス, 番号) 小さいほど優先
+    for disp, path in _registry_fonts():
+        if os.path.splitext(path)[1].lower() not in (".ttf", ".ttc") or not os.path.isfile(path):
+            continue
+        names = [n.strip() for n in re.sub(r"\s*\((TrueType|OpenType)\)\s*$", "", disp).split(" & ")]
+        for i, n in enumerate(names):
+            nl = n.lower()
+            if nl == key:
+                prio = 0
+            elif nl == key + " regular":
+                prio = 1
+            elif nl.startswith(key + " "):
+                prio = 2
+            else:
+                continue
+            if best is None or prio < best[0]:
+                best = (prio, path, i)
+    if best:
+        return best[1], best[2]
+
+    norm = re.sub(r"[\s_\-]", "", key)
+    for d in dirs:
+        try:
+            names = os.listdir(d)
+        except OSError:
+            continue
+        for fn in names:
+            stem, ext = os.path.splitext(fn)
+            if ext.lower() in (".ttf", ".ttc") and re.sub(r"[\s_\-]", "", stem.lower()) == norm:
+                return os.path.join(d, fn), 0
+    return None
+
+
+def register_pdf_font(font_name):
+    """PDF用に日本語フォントをreportlabへ登録し、(reportlab上のフォント名, 代替フォントか) を返す。
+    ・見つかったフォントはPDFに埋め込む(PDFを開くPCにそのフォントが無くても同じ見た目になる)。
+    ・見つからない/読み込めない場合だけ、PDFビューア側の日本語フォントで表示する
+      代替フォント(ゴシック体、フォント名に「明朝」を含むときは明朝体)にする。"""
+    cached = _PDF_FONT_CACHE.get(font_name)
+    if cached:
+        return cached
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+    result = None
+    found = _find_font_file(font_name)
+    if found:
+        path, idx = found
+        rl_name = f"AtenaPDF{len(_PDF_FONT_CACHE)}"
+        try:
+            pdfmetrics.registerFont(TTFont(rl_name, path, subfontIndex=idx))
+            result = (rl_name, False)
+            metrics = _read_font_metrics(path, idx)
+            if metrics:
+                _PDF_FONT_METRICS[rl_name] = metrics
+        except Exception:
+            result = None
+    if result is None:
+        is_serif = "明朝" in font_name or "mincho" in font_name.lower()
+        face = "HeiseiMin-W3" if is_serif else "HeiseiKakuGo-W5"
+        pdfmetrics.registerFont(UnicodeCIDFont(face))
+        result = (face, True)
+    _PDF_FONT_CACHE[font_name] = result
+    return result
+
+
+_PDF_NO_LINE_START = set("、。，．・：；？！）〕］｝〉》」』】ゝゞヽヾーァィゥェォッャュョヮヵヶぁぃぅぇぉっゃゅょゎ々!),.:;?]}")
+_PDF_NO_LINE_END = set("（〔［｛〈《「『【([{")
+
+
+def _pdf_wrap(text, font, size, max_w):
+    """文字数に応じて折り返し、行のリストを返す。\\n は改行。
+    行頭に来てはいけない文字(句読点・閉じ括弧など)と、行末に来てはいけない文字
+    (開き括弧など)、英数字の途中での折り返しは、できるだけ避ける。"""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    def is_word(ch):
+        return ch.isascii() and ch.isalnum()
+
+    lines = []
+    for para in text.split("\n"):
+        cur = ""
+        for ch in para:
+            if cur and stringWidth(cur + ch, font, size) > max_w:
+                if ch in _PDF_NO_LINE_START:
+                    cur += ch  # 句読点などは行末にぶら下げる
+                    continue
+                if cur[-1] in _PDF_NO_LINE_END and len(cur) > 1:
+                    lines.append(cur[:-1])
+                    cur = cur[-1] + ch
+                    continue
+                if is_word(ch) and is_word(cur[-1]):
+                    j = len(cur)
+                    while j > 0 and is_word(cur[j - 1]):
+                        j -= 1
+                    if j > 0:  # 英数字のかたまりごと次の行へ送る
+                        lines.append(cur[:j])
+                        cur = cur[j:] + ch
+                        continue
+                lines.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        lines.append(cur)
+    return lines
+
+
+def _pdf_layout_paragraph(text, font, size, align, indent_pt, width_pt):
+    """段落を折り返し、[(行の文字列, 左端からの位置pt), ...] を返す。
+    インデントの意味はWord出力と同じ(左寄せ=左から、右寄せ=右から、
+    中央=左右それぞれから空ける)。"""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    try:
+        indent = max(0.0, float(indent_pt))
+    except (TypeError, ValueError):
+        indent = 0.0
+    if align == "center":
+        avail = width_pt - indent * 2
+    else:
+        avail = width_pt - indent
+    avail = max(avail, size)  # 極端に狭くても1文字は置けるようにする
+    out = []
+    for line in _pdf_wrap(text, font, size, avail):
+        w = stringWidth(line, font, size)
+        if align == "right":
+            x = width_pt - indent - w
+        elif align == "center":
+            x = indent + (avail - w) / 2
+        else:
+            x = indent
+        out.append((line, x))
+    return out
+
+
+def _pdf_draw_lines(c, page_h_pt, font, size, lines, x_origin, y_top, pitch, baseline_off):
+    """lines の各行を、y_top(ページ上端からの位置pt)から行の間隔 pitch ごとに下へ描く。
+    baseline_off は「行の上端からベースラインまでの距離」。最後の行の下端の位置を返す。"""
+    c.setFont(font, size)
+    y = y_top
+    for text, dx in lines:
+        if text:
+            c.drawString(x_origin + dx, page_h_pt - (y + baseline_off), text)
+        y += pitch
+    return y
+
+
+def _require_reportlab():
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import mm
+    except ImportError:
+        raise ImportError(
+            "PDFを作るには reportlab が必要です。"
+            "コマンドで `pip install reportlab` を実行してから、もう一度試してください。"
+        )
+    return canvas, mm
+
+
+def build_label_pdf(records, out_path, settings, skip_slots=None, slot_mode=DEFAULT_SLOT_MODE):
+    """宛名シールをPDFで出力する(Word出力と同じ設定値・同じ枠の並び)。
+    Word出力(build_label_document)の位置の決まり方を、そのまま計算で再現する:
+      ・表は(互換モードの都合で)左へセルの内側余白ぶん食い込むので、文字の左端は
+        「左右余白+列の幅×列番号」の位置から始まる(折り返しの幅は 1片の幅-内側余白×2)
+      ・住所の段落の前に「(1片の高さ-文字の見積もり高さ)÷2」の空きを入れ、
+        段落の後ろには10ptの空き、行間はフォントの「1行」の高さの1.15倍
+      ・上の空き+住所+氏名を合わせたかたまりを、1片の中で縦中央に置く
+    戻り値: {"font_fallback": 代替フォントを使ったときの元のフォント名(使わなければ None)}"""
+    canvas, mm = _require_reportlab()
+
+    cols = settings["label_cols"]
+    rows = settings["label_rows"]
+    width_mm = settings["label_width_mm"]
+    height_mm = settings["label_height_mm"]
+    margin_top = settings["margin_top_mm"]
+    font_name = settings["font_name"]
+    font_size = settings["font_size_pt"]
+
+    font, fallback = register_pdf_font(font_name)
+    asc_em, desc_em, natural_em = pdf_font_metrics(font)
+    pitch = PDF_LABEL_LINE_MULT * natural_em * font_size
+    # 行の上端からベースラインまで(行間の余り・外部レディングは、行の上側に入る)
+    baseline_off = pitch - desc_em * font_size
+    after = PDF_LABEL_PARA_AFTER_PT
+
+    margin_lr = (PAGE_WIDTH_MM - width_mm * cols) / 2
+    per_page = cols * rows
+    slots = compute_label_slots(records, per_page, skip_slots, slot_mode)
+    num_pages = (len(slots) + per_page - 1) // per_page if slots else 0
+
+    page_h_pt = PAGE_HEIGHT_MM * mm
+    inner_w = width_mm * mm - PDF_LABEL_CELL_PAD_MM * mm * 2
+    cell_h = height_mm * mm
+
+    c = canvas.Canvas(out_path, pagesize=(PAGE_WIDTH_MM * mm, page_h_pt))
+    c.setTitle(DEFAULT_OUTPUT_BASENAME)
+    for page in range(max(num_pages, 1)):
+        for r in range(rows):
+            for col in range(cols):
+                idx = page * per_page + r * cols + col
+                if idx >= len(slots) or slots[idx] is None:
+                    continue
+                name, addr = slots[idx]
+                addr_lines = _pdf_layout_paragraph(
+                    addr, font, font_size, settings.get("addr_align", "left"),
+                    settings.get("addr_indent_pt", 21.0), inner_w)
+                name_lines = _pdf_layout_paragraph(
+                    name, font, font_size, settings.get("name_align", "center"),
+                    settings.get("name_indent_pt", 0.0), inner_w)
+
+                # 住所の段落の前の空き(Word出力と同じ見積もり。折り返しではなく改行の数で数える)
+                est_lines = (addr.count("\n") + 1) + (name.count("\n") + 1)
+                space_before = max(0.0, (cell_h - est_lines * font_size * PDF_LABEL_EST_LINE_RATIO) / 2)
+                total = (space_before + (len(addr_lines) + len(name_lines)) * pitch + after * 2)
+                top_gap = max(0.0, (cell_h - total) / 2)
+
+                x0 = (margin_lr + col * width_mm) * mm
+                y0 = (margin_top + r * height_mm) * mm
+                y = y0 + top_gap + space_before
+                y = _pdf_draw_lines(c, page_h_pt, font, font_size, addr_lines, x0, y, pitch, baseline_off)
+                _pdf_draw_lines(c, page_h_pt, font, font_size, name_lines, x0, y + after, pitch, baseline_off)
+        c.showPage()
+    c.save()
+    return {"font_fallback": font_name if fallback else None}
+
+
+def build_envelope_pdf(records, out_path, settings, slot_mode=DEFAULT_SLOT_MODE):
+    """封筒をPDFで出力する(データ1件につき封筒サイズの1ページ)。
+    寸法はWord出力と同じ envelope_geometry() で計算し、印字枠の上端から
+    文字サイズに合わせた行の高さで、住所(郵便番号つき)→氏名の順に上から詰めて描く。
+    戻り値: {"total", "printed", "no_postal", "font_fallback"}"""
+    canvas, mm = _require_reportlab()
+
+    geo = envelope_geometry(settings)
+    page_w, page_h = geo["page_w"], geo["page_h"]
+    font_size = geo["font_size"]
+    line_h = geo["line_height_pt"]
+
+    font, fallback = register_pdf_font(geo["font_name"])
+
+    entries = []
+    for rec, _key, label in iter_active_labels(records, slot_mode):
+        if not label.get("_error"):
+            entries.append((rec["_source_file"], label["氏名"], label["住所"]))
+
+    # 文字の左端は、Word出力と同じく左マージン+左の空白(表が左へ内側余白ぶん食い込むので、
+    # 内側余白は加えない)。折り返しの幅は 印字枠の幅-内側余白×2。
+    side_w = max(0.0, (geo["usable_width_mm"] - geo["content_width_mm"]) / 2)
+    box_x = (geo["margin_left_mm"] + side_w) * mm
+    box_w = (geo["content_width_mm"] - PDF_ENVELOPE_CELL_PAD_MM * 2) * mm
+    y_top = max(geo["top_offset_mm"], 0.1) * mm
+    page_h_pt = page_h * mm
+    baseline_off = line_h * PDF_EXACT_BASELINE_RATIO
+
+    c = canvas.Canvas(out_path, pagesize=(page_w * mm, page_h_pt))
+    c.setTitle(DEFAULT_OUTPUT_BASENAME)
+    printed = 0
+    no_postal = []
+    for source_file, name, addr in entries:
+        postal, addr_display = split_postal_and_address(addr)
+        if postal:
+            printed += 1
+            addr_with_postal = f"〒{postal[0]}-{postal[1]}\n{addr_display}"
+        else:
+            addr_with_postal = addr
+            no_postal.append(f"{source_file}({name or '氏名不明'})")
+
+        lines = _pdf_layout_paragraph(
+            addr_with_postal, font, font_size, settings.get("addr_align", "left"),
+            settings.get("addr_indent_pt", 21.0), box_w)
+        lines += _pdf_layout_paragraph(
+            name, font, font_size, settings.get("name_align", "center"),
+            settings.get("name_indent_pt", 0.0), box_w)
+        _pdf_draw_lines(c, page_h_pt, font, font_size, lines, box_x, y_top, line_h, baseline_off)
+        c.showPage()
+    if not entries:
+        c.showPage()
+    c.save()
+    return {"total": len(entries), "printed": printed, "no_postal": no_postal,
+            "font_fallback": geo["font_name"] if fallback else None}
 
 
 def find_input_files_in_dir(in_dir):
@@ -1309,6 +1810,10 @@ class App:
         self.slot_mode = self.store.get("slot_mode", DEFAULT_SLOT_MODE)
         if self.slot_mode not in SLOT_KEYS_BY_MODE:
             self.slot_mode = DEFAULT_SLOT_MODE
+        # 出力様式(Word / PDF)。アプリ共通の設定で、用紙設定のプリセットには含めない
+        self.output_format = self.store.get("output_format", DEFAULT_OUTPUT_FORMAT)
+        if self.output_format not in OUTPUT_FORMAT_EXT:
+            self.output_format = DEFAULT_OUTPUT_FORMAT
 
         self.files = []
         self.records = []
@@ -1488,10 +1993,11 @@ class App:
 
         frm_out = ttk.Frame(bottom_row)
         frm_out.grid(row=0, column=2, sticky="ew", padx=(16, 0))
-        ttk.Label(frm_out, text="出力ファイル(宛名印刷.docx):").pack(anchor="w")
+        self.out_label = ttk.Label(frm_out, text=self._out_label_text())
+        self.out_label.pack(anchor="w")
         row_out = ttk.Frame(frm_out)
         row_out.pack(fill="x", pady=(2, 0))
-        self.out_var = tk.StringVar(value=DEFAULT_OUTPUT_FILE)
+        self.out_var = tk.StringVar(value=default_output_path(self.output_format))
         ttk.Entry(row_out, textvariable=self.out_var).pack(side="left", fill="x", expand=True)
         ttk.Button(row_out, text="参照...", command=self.browse_output).pack(side="left", padx=(6, 0))
 
@@ -1501,6 +2007,27 @@ class App:
 
         self.draw_drop_icon()
         self.reload_default()
+
+    def _out_label_text(self):
+        return f"出力ファイル({DEFAULT_OUTPUT_BASENAME}{OUTPUT_FORMAT_EXT[self.output_format]}):"
+
+    def set_output_format(self, fmt):
+        """出力様式(Word / PDF)を切り替える。出力ファイル欄の拡張子とラベルも合わせる
+        (欄に入っている保存先のフォルダ・ファイル名はそのまま、拡張子だけ替える)。"""
+        if fmt not in OUTPUT_FORMAT_EXT or fmt == self.output_format:
+            return
+        old_ext = OUTPUT_FORMAT_EXT[self.output_format]
+        new_ext = OUTPUT_FORMAT_EXT[fmt]
+        self.output_format = fmt
+        self.store["output_format"] = fmt
+        cur = self.out_var.get().strip()
+        if not cur:
+            self.out_var.set(default_output_path(fmt))
+        else:
+            base, ext = os.path.splitext(cur)
+            if ext.lower() == old_ext:
+                self.out_var.set(base + new_ext)
+        self.out_label.config(text=self._out_label_text())
 
     ENVELOPE_ICON_COLOR = "#4a90d9"
 
@@ -2172,6 +2699,17 @@ class App:
             )
             return names + others
 
+        # ---- 出力様式(Word / PDF)。アプリ共通の設定で、プリセットには含まれない ----
+        fmt_row = ttk.Frame(dlg)
+        fmt_row.pack(fill="x", padx=10, pady=(10, 0))
+        ttk.Label(fmt_row, text="出力様式:").pack(side="left")
+        fmt_var = tk.StringVar(value=OUTPUT_FORMAT_LABELS.get(
+            self.output_format, OUTPUT_FORMAT_LABELS[DEFAULT_OUTPUT_FORMAT]))
+        ttk.Combobox(fmt_row, textvariable=fmt_var, values=list(OUTPUT_FORMAT_LABELS.values()),
+                     state="readonly", width=24).pack(side="left", padx=6)
+        ttk.Label(fmt_row, text="※Wordが入っていないPCでは「PDF」を選びます(プリセットには含まれません)",
+                  foreground="#777777").pack(side="left", padx=6)
+
         # ---- レイアウト種別 ----
         mode_row = ttk.Frame(dlg)
         mode_row.pack(fill="x", padx=10, pady=(10, 0))
@@ -2619,6 +3157,8 @@ class App:
             self.settings = new_settings
             self.store["current"] = new_settings
             self.store["presets"] = presets
+            # 出力様式(アプリ共通の設定。変わったときは出力ファイル欄の拡張子も替える)
+            self.set_output_format(OUTPUT_FORMAT_LABELS_REV.get(fmt_var.get(), self.output_format))
             try:
                 save_store(self.store)
             except Exception as e:
@@ -2643,11 +3183,13 @@ class App:
 
     # -------------------- 出力 --------------------
     def browse_output(self):
+        ext = OUTPUT_FORMAT_EXT[self.output_format]
+        type_name = "PDFファイル" if self.output_format == "pdf" else "Wordファイル"
         f = filedialog.asksaveasfilename(
             initialdir=os.path.dirname(self.out_var.get() or "."),
-            initialfile=os.path.basename(self.out_var.get() or "宛名印刷.docx"),
-            defaultextension=".docx",
-            filetypes=[("Wordファイル", "*.docx")],
+            initialfile=os.path.basename(self.out_var.get() or (DEFAULT_OUTPUT_BASENAME + ext)),
+            defaultextension=ext,
+            filetypes=[(type_name, "*" + ext)],
         )
         if f:
             self.out_var.set(f)
@@ -2676,13 +3218,26 @@ class App:
 
     def _build(self, out_path):
         try:
-            docx_path = get_unique_output_path(out_path)
-            if docx_path != out_path:
-                self.log_write(f"[注意] 「{out_path}」は既に存在するため、代わりに「{docx_path}」として出力します。")
+            fmt = self.output_format
+            ext = OUTPUT_FORMAT_EXT[fmt]
+            # 出力ファイル欄の拡張子が出力様式と違うときは、様式に合わせて直す
+            base, cur_ext = os.path.splitext(out_path)
+            if cur_ext.lower() != ext:
+                out_path = base + ext
+                self.log_write(f"[注意] 出力様式に合わせて、出力ファイルの拡張子を「{ext}」にしました。")
+            out_file = get_unique_output_path(out_path)
+            if out_file != out_path:
+                self.log_write(f"[注意] 「{out_path}」は既に存在するため、代わりに「{out_file}」として出力します。")
 
+            font_fallback = None
             if self.settings.get("layout_mode", "label") == "envelope":
-                result = build_envelope_document(self.records, docx_path, self.settings,
-                                                 slot_mode=self.slot_mode)
+                if fmt == "pdf":
+                    result = build_envelope_pdf(self.records, out_file, self.settings,
+                                                slot_mode=self.slot_mode)
+                    font_fallback = result.get("font_fallback")
+                else:
+                    result = build_envelope_document(self.records, out_file, self.settings,
+                                                     slot_mode=self.slot_mode)
                 printed = result["printed"]
                 total = result["total"]
                 if result["no_postal"]:
@@ -2690,26 +3245,40 @@ class App:
                         "[注意] 郵便番号を抽出できなかったデータがあります(該当箇所は空欄で出力): "
                         + ", ".join(result["no_postal"])
                     )
-                self.log_write(f"完了: {printed}/{total}件の郵便番号を印字し、{docx_path} に出力しました。")
-                done_msg = f"{printed}/{total}件の郵便番号を印字しました。\nWordファイルを開きます。"
+                self.log_write(f"完了: {printed}/{total}件の郵便番号を印字し、{out_file} に出力しました。")
+                done_msg = f"{printed}/{total}件の郵便番号を印字しました。\nファイルを開きます。"
             else:
-                build_label_document(self.records, docx_path, self.settings,
-                                     skip_slots=self.skip_slots, slot_mode=self.slot_mode)
+                if fmt == "pdf":
+                    result = build_label_pdf(self.records, out_file, self.settings,
+                                             skip_slots=self.skip_slots, slot_mode=self.slot_mode)
+                    font_fallback = result.get("font_fallback")
+                else:
+                    build_label_document(self.records, out_file, self.settings,
+                                         skip_slots=self.skip_slots, slot_mode=self.slot_mode)
                 active = [lb for _r, _k, lb in iter_active_labels(self.records, self.slot_mode)]
                 total_slots = len(active)
                 ok_slots = sum(1 for lb in active if not lb["_error"])
-                self.log_write(f"完了: {ok_slots}/{total_slots}枠を {docx_path} に出力しました。")
-                done_msg = f"{ok_slots}/{total_slots}枠を出力しました。\nWordファイルを開きます。"
+                self.log_write(f"完了: {ok_slots}/{total_slots}枠を {out_file} に出力しました。")
+                done_msg = f"{ok_slots}/{total_slots}枠を出力しました。\nファイルを開きます。"
+
+            if font_fallback:
+                self.log_write(
+                    f"[注意] フォント「{font_fallback}」がこのPCで見つからない(または読み込めない)ため、"
+                    "代替のフォントでPDFを出力しました。PDFを開いたPCの日本語フォントで表示されます。")
+            if fmt == "pdf":
+                done_msg += "\n(PDFは「拡大/縮小なし(実際のサイズ)」で印刷してください)"
 
             def _done():
                 self.run_btn.set_enabled(True)
                 messagebox.showinfo("完了", done_msg)
-                self.open_file(docx_path)
+                self.open_file(out_file)
             self.root.after(0, _done)
 
         except Exception as e:
-            self.log_write(f"[エラー] 処理中に問題が発生しました: {e}")
-            self.root.after(0, lambda: messagebox.showerror("エラー", f"処理中に問題が発生しました:\n{e}"))
+            # lambdaは後から実行されるが、except節を出ると変数 e は消えるため、文字列にして渡す
+            err_text = str(e)
+            self.log_write(f"[エラー] 処理中に問題が発生しました: {err_text}")
+            self.root.after(0, lambda: messagebox.showerror("エラー", f"処理中に問題が発生しました:\n{err_text}"))
             self.root.after(0, lambda: self.run_btn.set_enabled(True))
 
     def open_file(self, path):
@@ -2721,7 +3290,7 @@ class App:
             else:
                 subprocess.run(["xdg-open", path])
         except Exception as e:
-            self.log_write(f"[注意] Wordファイルの自動オープンに失敗しました: {e}")
+            self.log_write(f"[注意] ファイルの自動オープンに失敗しました: {e}")
 
 
 # ==================================================================
