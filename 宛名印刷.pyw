@@ -9,7 +9,7 @@
 
 左側の一覧で氏名・住所の抽出結果を確認・その場で修正してから、
 下の緑色のボタンで宛名のファイル(WordまたはPDF)を作成します。
-出力様式(Word / PDF)は「用紙設定...」の一番上で切り替えられます。
+出力様式(Word / PDF)は「用紙設定...」の「レイアウト種別」の右隣で切り替えられます。
 
 ■ 「使い方」の画像
     説明画像は、このファイルの中に埋め込まれています。差し替えたいときは、
@@ -149,7 +149,7 @@ USAGE_TEXT = """\
 
 
 ■ 出力様式(Word / PDF)
- ・「用紙設定...」の一番上の「出力様式」で、出力するファイルの形式を選びます。
+ ・「用紙設定...」の「レイアウト種別」の右隣にある「出力様式」で、出力するファイルの形式を選びます。
    - Word(.docx) … 従来どおり。WordやLibreOfficeなど、.docxを開けるアプリが必要です。
    - PDF(.pdf)   … Word等のOfficeが入っていないPCでも、PDFビューア(Edge・
                     Adobe Readerなど)があれば開いて印刷できます。
@@ -175,7 +175,7 @@ USAGE_TEXT = """\
  ・プリセットに保存すると、配置とインデントも一緒に保存されます。
 
 ■ 用紙設定の画面の見方
- ・一番上の「出力様式」で、Word(.docx)かPDF(.pdf)を選びます。
+ ・「レイアウト種別」の右隣の「出力様式」で、Word(.docx)かPDF(.pdf)を選びます。
  ・その下の「レイアウト種別」で「宛名シール」か「封筒」を選びます。
  ・宛名シールの場合:「文字の設定」→「シール設定」の順に並んでいます。
    - 文字の設定 … フォント(一覧から選択)、文字サイズ、住所・氏名の配置とインデント
@@ -2699,17 +2699,6 @@ class App:
             )
             return names + others
 
-        # ---- 出力様式(Word / PDF)。アプリ共通の設定で、プリセットには含まれない ----
-        fmt_row = ttk.Frame(dlg)
-        fmt_row.pack(fill="x", padx=10, pady=(10, 0))
-        ttk.Label(fmt_row, text="出力様式:").pack(side="left")
-        fmt_var = tk.StringVar(value=OUTPUT_FORMAT_LABELS.get(
-            self.output_format, OUTPUT_FORMAT_LABELS[DEFAULT_OUTPUT_FORMAT]))
-        ttk.Combobox(fmt_row, textvariable=fmt_var, values=list(OUTPUT_FORMAT_LABELS.values()),
-                     state="readonly", width=24).pack(side="left", padx=6)
-        ttk.Label(fmt_row, text="※Wordが入っていないPCでは「PDF」を選びます(プリセットには含まれません)",
-                  foreground="#777777").pack(side="left", padx=6)
-
         # ---- レイアウト種別 ----
         mode_row = ttk.Frame(dlg)
         mode_row.pack(fill="x", padx=10, pady=(10, 0))
@@ -2718,6 +2707,16 @@ class App:
         mode_combo = ttk.Combobox(mode_row, textvariable=mode_var, values=list(MODE_LABELS.values()),
                                    state="readonly", width=24)
         mode_combo.pack(side="left", padx=6)
+
+        # 出力様式(Word / PDF)。アプリ共通の設定で、プリセットには含まれない。
+        # レイアウト種別の右隣に置き、注意書きはその下に出す
+        ttk.Label(mode_row, text="出力様式:").pack(side="left", padx=(16, 0))
+        fmt_var = tk.StringVar(value=OUTPUT_FORMAT_LABELS.get(
+            self.output_format, OUTPUT_FORMAT_LABELS[DEFAULT_OUTPUT_FORMAT]))
+        ttk.Combobox(mode_row, textvariable=fmt_var, values=list(OUTPUT_FORMAT_LABELS.values()),
+                     state="readonly", width=14).pack(side="left", padx=6)
+        ttk.Label(dlg, text="※出力様式: Wordが入っていないPCでは「PDF」を選びます(出力様式はプリセットには含まれません)",
+                  foreground="#777777").pack(fill="x", padx=10, pady=(2, 0))
 
         # ---- プリセット行(レイアウト種別ごとに表示するプリセットを分ける) ----
         preset_row = ttk.Frame(dlg)
